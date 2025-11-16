@@ -1,0 +1,19 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/spfx-build/config.2.0.schema.json",
+  "version": "2.0",
+  "bundles": {
+    "comunicacoes-cliente-web-part": {
+      "components": [
+        {
+          "entrypoint": "./lib/webparts/comunicacoesCliente/ComunicacoesClienteWebPart.js",
+          "manifest": "./src/webparts/comunicacoesCliente/ComunicacoesClienteWebPart.manifest.json"
+        }
+      ]
+    }
+  },
+  "externals": {},
+  "localizedResources": {
+    "PropertyControlStrings": "node_modules/@pnp/spfx-property-controls/lib/loc/{locale}.js",
+    "ComunicacoesClienteWebPartStrings": "lib/webparts/comunicacoesCliente/loc/{locale}.js"
+  }
+}

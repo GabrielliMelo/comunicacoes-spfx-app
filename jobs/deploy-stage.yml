@@ -1,0 +1,62 @@
+parameters:
+  job_name: deploy_sppkg
+  display_name: Upload & deploy *.sppkg to SharePoint app catalog
+  target_environment: ''
+  node_version: '18.x'
+  m365_tenant_id: ''
+  m365_client_id: ''
+  m365_app_catalog_site_url: ''
+  secure_file_name: ''
+  m365cli_app_catalog_scope: ''
+  pool:
+    vmImage: ubuntu-latest
+
+jobs:
+- deployment: ${{ parameters.job_name }}
+  displayName: ${{ parameters.display_name }}
+  environment: ${{ parameters.target_environment }}
+  pool: ${{ parameters.pool }}
+  strategy:
+    runOnce:
+      deploy:
+        steps:
+        - task: UseNode@1
+          inputs:
+            version: ${{ parameters.node_version }}
+          displayName: Set to Node.js ${{ parameters.node_version }}
+
+        - task: DownloadSecureFile@1
+          name: certificado
+          displayName: "Download Certificate"
+          inputs:
+            secureFile: 'CERTIFICADO.pfx'
+
+        - script: sudo npm install -g @pnp/cli-microsoft365
+          displayName: Install CLI for Microsoft 365
+
+
+        - script: |
+            m365 login --authType certificate --certificateFile $(certificado.secureFilePath) --password $(m365_cert_password) --appId $(m365_app_id) --tenant $(m365_tenant_id)
+          displayName: "Sign into Microsoft 365 using Certificate"
+
+        - script: m365 spo set --url "$(m365_sharepoint_base_url)"
+        
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            buildType: 'current'
+            artifactName: 'spfx-package'
+          displayName: Download SharePoint package (*.sppkg)
+
+        - script: |
+            CMD_GET_SPPKG_NAME=$(find . -name '*.sppkg' -exec basename {} \;)
+            echo "##vso[task.setvariable variable=SpPkgFileName;isOutput=true]${CMD_GET_SPPKG_NAME}"
+          displayName: Get generated *.sppkg filename
+          name: GetSharePointPackage
+
+        - script: |
+            m365 spo app add --filePath "$(Pipeline.Workspace)/spfx-package/$(sppkg_app_name)" --appCatalogScope sitecollection --appCatalogUrl ${{ parameters.m365_app_catalog_site_url }} --overwrite
+          displayName: Upload SharePoint package to Site Collection App Catalog
+
+        - script: |
+            m365 spo app deploy --name "$(sppkg_app_name)" --appCatalogScope sitecollection --appCatalogUrl ${{ parameters.m365_app_catalog_site_url }}
+          displayName: Deploy SharePoint package

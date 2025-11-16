@@ -1,0 +1,57 @@
+parameters:
+  job_name: build_package
+  display_name: SPFx production build & packaging
+  pool:
+    vmImage: ubuntu-latest
+  working_directory: ''
+  package_manager: 'npm'
+  node_version: '18.x'
+
+jobs:
+- job: ${{ parameters.job_name }}
+  displayName: ${{ parameters.display_name }}
+  pool: ${{ parameters.pool }}
+  steps:
+  - task: UseNode@1
+    displayName: Set to Node.js ${{ parameters.node_version }}
+    inputs:
+      version: ${{ parameters.node_version }}
+
+  - script: npm ci
+    displayName: Install dependencies (with NPM)
+    workingDirectory: ${{ parameters.working_directory }}
+    condition: eq('${{ parameters.package_manager }}', 'npm')
+
+  - task: Gulp@1
+    displayName: SPFx build
+    inputs:
+      gulpFile: ${{ parameters.working_directory }}/gulpfile.js
+      workingDirectory: ${{ parameters.working_directory }}
+      targets: build
+
+  - task: Gulp@1
+    displayName: SPFx bundle (production)
+    inputs:
+      gulpFile: ${{ parameters.working_directory }}/gulpfile.js
+      workingDirectory: ${{ parameters.working_directory }}
+      targets: bundle
+      arguments: --ship
+
+  - task: Gulp@1
+    displayName: SPFx package solution (production)
+    inputs:
+      gulpFile: ${{ parameters.working_directory }}/gulpfile.js
+      workingDirectory: ${{ parameters.working_directory }}
+      targets: package-solution
+      arguments: --ship
+
+  - script: |
+      CMD_GET_SPPKG_NAME=$(find . -name '*.sppkg' -exec basename {} \;)
+      echo "##vso[task.setvariable variable=SpPkgFileName;isOutput=true]${CMD_GET_SPPKG_NAME}"
+    displayName: Get generated *.sppkg filename
+
+  - task: PublishPipelineArtifact@1
+    displayName: Publish SharePoint package (*.sppkg)
+    inputs:
+      targetPath: ${{ parameters.working_directory }}/sharepoint/solution/${{ parameters.sppkg_app_name }}
+      artifact: spfx-package

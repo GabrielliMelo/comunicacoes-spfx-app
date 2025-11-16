@@ -1,0 +1,15 @@
+{
+  "$schema": "https://raw.githubusercontent.com/s-KaiNet/spfx-fast-serve/master/schema/fast-serve.schema.json",
+  "https": false,
+  "initialPage": "https://seudominio.sharepoint.com/sites/seusite/SitePages/SuaPagina.aspx",
+  "serveConfigurations": {
+    "default": {
+      "pageUrl": "https://seudominio.sharepoint.com/sites/seusite/SitePages/SuaPagina.aspx",
+      "customActions": {
+        "YOUR-COMPONENT-ID": {
+          "location": "ClientSideExtension.ApplicationCustomizer"
+        }
+      }
+    }
+  }
+}
