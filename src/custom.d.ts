@@ -20,7 +20,5 @@ declare module "*.png" {
   export default content;
 }
 // Permite importação de módulos SCSS com tipagem genérica de classes.
-declare module "*.module.scss" {
-  const classes: { [key: string]: string };
-  export default classes;
-}
+// (Removido suporte a scss modules porque o layout usa Tailwind)
+declare module "*.css";

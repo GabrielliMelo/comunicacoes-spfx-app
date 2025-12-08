@@ -9,11 +9,20 @@
           "manifest": "./src/webparts/comunicacoesCliente/ComunicacoesClienteWebPart.manifest.json"
         }
       ]
+    },
+    "cleanpage-application-customizer": {
+      "components": [
+        {
+          "entrypoint": "./lib/extensions/cleanpage/CleanpageApplicationCustomizer.js",
+          "manifest": "./src/extensions/cleanpage/CleanpageApplicationCustomizer.manifest.json"
+        }
+      ]
     }
   },
   "externals": {},
   "localizedResources": {
     "PropertyControlStrings": "node_modules/@pnp/spfx-property-controls/lib/loc/{locale}.js",
-    "ComunicacoesClienteWebPartStrings": "lib/webparts/comunicacoesCliente/loc/{locale}.js"
+    "ComunicacoesClienteWebPartStrings": "lib/webparts/comunicacoesCliente/loc/{locale}.js",
+    "CleanpageApplicationCustomizerStrings": "lib/extensions/cleanpage/loc/{locale}.js"
   }
 }

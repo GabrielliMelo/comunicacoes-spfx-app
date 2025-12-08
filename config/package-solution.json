@@ -30,7 +30,13 @@
         "title": "comunicacoe-client-side-solution",
         "description": "The feature that activates elements of the template solution.",
         "id": "87f8b39c-4390-4e7b-834a-25efd9108260",
-        "version": "1.0.0.0"
+        "version": "1.0.0.0",
+        "assets": {
+          "elementManifests": [
+            "elements.xml",
+            "ClientSideInstance.xml"
+          ]
+        }
       }
     ]
   },

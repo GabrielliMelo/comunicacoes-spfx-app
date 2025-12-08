@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Elements xmlns="http://schemas.microsoft.com/sharepoint/">
+    <CustomAction
+        Title="Cleanpage"
+        Location="ClientSideExtension.ApplicationCustomizer"
+        ClientSideComponentId="963317e2-d3e3-42af-9228-7c008a208047"
+        ClientSideComponentProperties="{&quot;testMessage&quot;:&quot;Test message&quot;}">
+    </CustomAction>
+</Elements>

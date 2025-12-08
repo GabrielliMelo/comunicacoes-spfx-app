@@ -16,6 +16,7 @@
     "solutionShortDescription": "comunicacoes-client-side-solution",
     "skipFeatureDeployment": true,
     "isDomainIsolated": false,
-    "componentType": "webpart"
+    "componentType": "extension",
+    "extensionType": "ApplicationCustomizer"
   }
 }
