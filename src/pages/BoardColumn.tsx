@@ -6,6 +6,8 @@ export interface BoardItem {
     title: string;
     description: string;
     assignee?: string;
+    priority?: string;
+    tags?: string[];
 }
 
 interface BoardColumnProps {
@@ -14,10 +16,11 @@ interface BoardColumnProps {
     columnKey: string;
     isActiveDrop: boolean;
     activeTaskId: string | null;
+    checklists: Record<string, { done: number; total: number }>;
     onDragStart: (event: React.DragEvent, cardId: number, fromColumnKey: string) => void;
     onDragEnd: () => void;
     onDrop: (event: React.DragEvent, toColumnKey: string) => void;
-    onDragOver: (event: React.DragEvent) => void;
+    onDragOver: (event: React.DragEvent, columnKey: string) => void;
     onDragLeave: () => void;
     onCardClick: (item: BoardItem, columnTitle: string) => void;
     onPlayToggle: (cardId: number) => void;
@@ -29,6 +32,7 @@ const BoardColumn: React.FC<BoardColumnProps> = ({
     columnKey,
     isActiveDrop,
     activeTaskId,
+    checklists,
     onDragStart,
     onDragEnd,
     onDrop,
@@ -39,7 +43,7 @@ const BoardColumn: React.FC<BoardColumnProps> = ({
 }) => {
     return (
         <section
-            onDragOver={onDragOver}
+            onDragOver={(event) => onDragOver(event, columnKey)}
             onDrop={(event) => onDrop(event, columnKey)}
             onDragLeave={onDragLeave}
             className={`w-[320px] shrink-0 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 transition-all duration-200 ${isActiveDrop ? 'ring-2 ring-indigo-200 dark:ring-indigo-500/40 translate-y-0.5' : 'hover:-translate-y-0.5'
@@ -61,6 +65,7 @@ const BoardColumn: React.FC<BoardColumnProps> = ({
                         key={item.id}
                         item={item}
                         isPlaying={activeTaskId === String(item.id)}
+                        checklistSummary={checklists[String(item.id)]}
                         onPlayToggle={onPlayToggle}
                         onClick={(card) => onCardClick(card, title)}
                         onDragStart={(event, cardId) => onDragStart(event, cardId, columnKey)}

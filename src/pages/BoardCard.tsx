@@ -5,6 +5,7 @@ import { BoardItem } from './BoardColumn';
 interface BoardCardProps {
     item: BoardItem;
     isPlaying?: boolean;
+    checklistSummary?: { done: number; total: number };
     onPlayToggle: (cardId: number) => void;
     onClick: (card: BoardItem) => void;
     onDragStart: (event: React.DragEvent, cardId: number) => void;
@@ -14,6 +15,7 @@ interface BoardCardProps {
 const BoardCard: React.FC<BoardCardProps> = ({
     item,
     isPlaying,
+    checklistSummary,
     onPlayToggle,
     onClick,
     onDragStart,
@@ -22,12 +24,12 @@ const BoardCard: React.FC<BoardCardProps> = ({
     const [elapsedTime, setElapsedTime] = React.useState(0);
     const timerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
 
-    const stopTimer = () => {
+    const stopTimer = React.useCallback(() => {
         if (timerRef.current) {
             clearInterval(timerRef.current);
             timerRef.current = null;
         }
-    };
+    }, []);
 
     const formatTime = (seconds: number) => {
         const mins = Math.floor(seconds / 60);
@@ -59,8 +61,7 @@ const BoardCard: React.FC<BoardCardProps> = ({
         return () => {
             stopTimer();
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [item.id]);
+    }, [item.id, stopTimer]);
 
     // Persistir sempre que alterar
     React.useEffect(() => {
@@ -86,7 +87,7 @@ const BoardCard: React.FC<BoardCardProps> = ({
         return () => {
             stopTimer();
         };
-    }, [isPlaying]);
+    }, [isPlaying, stopTimer]);
 
     return (
         <article
@@ -116,18 +117,64 @@ const BoardCard: React.FC<BoardCardProps> = ({
                 onClick={() => onClick(item)}
                 className="w-full text-left pr-10 space-y-2"
             >
-                <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 truncate">
-                    {item.title}
-                </h3>
+                <div className="flex items-center justify-between gap-2">
+                    <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 truncate">
+                        {item.title}
+                    </h3>
+                    {item.priority && (
+                        <span
+                            className={`inline-flex items-center rounded-full px-2 py-1 text-[11px] font-semibold capitalize ${
+                                item.priority === 'alta'
+                                    ? 'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-200'
+                                    : item.priority === 'media'
+                                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200'
+                                        : item.priority === 'baixa'
+                                            ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200'
+                                            : 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200'
+                            }`}
+                        >
+                            {item.priority}
+                        </span>
+                    )}
+                </div>
                 <p className="text-xs text-neutral-600 dark:text-neutral-400 leading-relaxed">
                     {item.description}
                 </p>
+                {item.tags && item.tags.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                        {item.tags.map((tag) => (
+                            <span
+                                key={tag}
+                                className="inline-flex items-center rounded-full bg-indigo-50 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-200 px-2 py-0.5 text-[11px] font-semibold"
+                            >
+                                {tag}
+                            </span>
+                        ))}
+                    </div>
+                )}
                 <div className="flex items-center gap-2 text-[11px] font-semibold text-blue-700 dark:text-blue-200">
                     <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 dark:bg-blue-900 px-2 py-1">
                         <PlayIcon className="h-3 w-3" />
                         {formatTime(elapsedTime)}
                     </span>
                 </div>
+                {checklistSummary && checklistSummary.total > 0 && (
+                    <div className="space-y-1">
+                        <div className="flex items-center gap-2 text-[11px] text-neutral-600 dark:text-neutral-300">
+                            <span className="font-semibold">
+                                {checklistSummary.done}/{checklistSummary.total} concluído
+                            </span>
+                        </div>
+                        <div className="h-2 w-full rounded-full bg-neutral-200 dark:bg-neutral-800">
+                            <div
+                                className="h-2 rounded-full bg-blue-500"
+                                style={{
+                                    width: `${Math.min(100, (checklistSummary.done / checklistSummary.total) * 100)}%`,
+                                }}
+                            />
+                        </div>
+                    </div>
+                )}
                 {item.assignee && (
                     <p className="flex items-center gap-2 text-xs font-medium text-neutral-700 dark:text-neutral-200">
                         <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-neutral-200 text-neutral-800 dark:bg-neutral-700 dark:text-neutral-100">
