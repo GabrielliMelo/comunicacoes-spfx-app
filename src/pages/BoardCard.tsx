@@ -7,9 +7,10 @@ interface BoardCardProps {
     isPlaying?: boolean;
     checklistSummary?: { done: number; total: number };
     onPlayToggle: (cardId: number) => void;
-    onClick: (card: BoardItem) => void;
+    onClick: (card: BoardItem, event: React.MouseEvent) => void;
     onDragStart: (event: React.DragEvent, cardId: number) => void;
     onDragEnd?: () => void;
+    isSelected?: boolean;
 }
 
 const BoardCard: React.FC<BoardCardProps> = ({
@@ -20,6 +21,7 @@ const BoardCard: React.FC<BoardCardProps> = ({
     onClick,
     onDragStart,
     onDragEnd,
+    isSelected = false,
 }) => {
     const [elapsedTime, setElapsedTime] = React.useState(0);
     const [isDragging, setIsDragging] = React.useState(false);
@@ -130,7 +132,7 @@ const BoardCard: React.FC<BoardCardProps> = ({
             onDragStartCapture={handleDragStart}
             onDragEndCapture={handleDragEnd}
             className={`relative rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 p-4 transition-all duration-300 ease-out hover:-translate-y-0.5 hover:shadow-md hover:shadow-black/5 dark:hover:shadow-white/5 ${isPlaying ? 'ring-2 ring-blue-400 dark:ring-blue-500' : ''
-                } ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'} ${isDragging ? 'scale-105' : 'scale-100'}`}
+                } ${isSelected ? 'ring-2 ring-indigo-400 dark:ring-indigo-500' : ''} ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'} ${isDragging ? 'scale-105' : 'scale-100'}`}
         >
             {item.watchers && item.watchers.length > 0 && (
                 <div className="absolute -top-3 right-3 flex items-center">
@@ -166,11 +168,14 @@ const BoardCard: React.FC<BoardCardProps> = ({
 
             <button
                 type="button"
-                onClick={() => onClick(item)}
+                onClick={(event) => onClick(item, event)}
                 className="w-full text-left pr-10 space-y-2"
             >
                 <div className="flex items-center justify-between gap-2">
-                    <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 truncate">
+                    <h3
+                        className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 truncate"
+                        title={item.title}
+                    >
                         {item.title}
                     </h3>
                     {item.priority && (

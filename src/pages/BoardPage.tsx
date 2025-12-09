@@ -64,13 +64,6 @@ const initialColumns: ColumnConfig[] = [
     },
 ];
 
-const columnRules: Record<string, string[]> = {
-    backlog: ['todo'],
-    todo: ['doing'],
-    doing: ['waiting', 'done'],
-    waiting: ['doing', 'done'],
-    done: [],
-};
 
 const BoardPage: React.FC = () => {
     const [columns, setColumns] = React.useState<ColumnConfig[]>(initialColumns);
@@ -87,24 +80,16 @@ const BoardPage: React.FC = () => {
     const [debouncedSearch, setDebouncedSearch] = React.useState('');
     const [checklists, setChecklists] = React.useState<Record<string, ChecklistItem[]>>({});
     const [history, setHistory] = React.useState<Record<string, HistoryEntry[]>>({});
-
-    const handleDragStart = (event: React.DragEvent, cardId: number, fromColumnKey: string) => {
-        event.dataTransfer.setData(
-            'application/json',
-            JSON.stringify({ cardId, fromColumnKey }),
-        );
-        event.dataTransfer.effectAllowed = 'move';
-    };
-
-    const handleDragOver = (event: React.DragEvent, columnKey: string) => {
-        event.preventDefault();
-        event.dataTransfer.dropEffect = 'move';
-        setActiveDropColumn(columnKey);
-    };
-
-    const handleDragLeave = () => {
-        setActiveDropColumn(null);
-    };
+    const [columnSorts, setColumnSorts] = React.useState<Record<string, { field: string; direction: 'asc' | 'desc' }>>({});
+    const [groupBy, setGroupBy] = React.useState<'column' | 'assignee'>('column');
+    const [isDragging, setIsDragging] = React.useState(false);
+    const scrollContainerRef = React.useRef<HTMLDivElement | null>(null);
+    const scrollIntervalRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+    const [selectedIds, setSelectedIds] = React.useState<number[]>([]);
+    const lastSelectedRef = React.useRef<{ columnKey: string; index: number } | null>(null);
+    const [bulkMoveTarget, setBulkMoveTarget] = React.useState<string>('todo');
+    const [bulkPriority, setBulkPriority] = React.useState<string>('alta');
+    const [bulkTag, setBulkTag] = React.useState<string>('');
 
     const pushHistory = React.useCallback((cardId: number, action: string) => {
         setHistory((prev) => {
@@ -121,64 +106,251 @@ const BoardPage: React.FC = () => {
         });
     }, []);
 
+    const handleDragStart = (event: React.DragEvent, cardId: number, fromColumnKey: string) => {
+        const idsToDrag = selectedIds.includes(cardId) ? selectedIds : [cardId];
+        const fromColumns: Record<number, string> = {};
+        columns.forEach((col) => {
+            col.items.forEach((item) => {
+                if (idsToDrag.includes(item.id)) {
+                    fromColumns[item.id] = col.key;
+                }
+            });
+        });
+
+        event.dataTransfer.setData(
+            'application/json',
+            JSON.stringify({ cardIds: idsToDrag, fromColumnKey, fromColumns }),
+        );
+        event.dataTransfer.effectAllowed = 'move';
+        setIsDragging(true);
+    };
+
+    const handleDragOver = (event: React.DragEvent, columnKey: string) => {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+        setActiveDropColumn(columnKey);
+    };
+
+    const handleDragLeave = () => {
+        setActiveDropColumn(null);
+    };
+
+    const handleDragEnd = () => {
+        setIsDragging(false);
+        setActiveDropColumn(null);
+        if (scrollIntervalRef.current) {
+            clearInterval(scrollIntervalRef.current);
+            scrollIntervalRef.current = null;
+        }
+    };
+
+    const handleBulkMove = (targetKey: string) => {
+        if (!targetKey || selectedIds.length === 0) return;
+        if (targetKey === 'done') {
+            const confirmFinish = window.confirm('Deseja marcar todos os selecionados como concluídos?');
+            if (!confirmFinish) return;
+        }
+
+        setColumns((prev) => {
+            const selectedSet = new Set(selectedIds);
+            const movingItems: BoardItem[] = [];
+            const stripped = prev.map((col) => {
+                const remaining = col.items.filter((item) => {
+                    if (selectedSet.has(item.id)) {
+                        movingItems.push(item);
+                        return false;
+                    }
+                    return true;
+                });
+                return { ...col, items: remaining };
+            });
+
+            const targetIdx = stripped.findIndex((col) => col.key === targetKey);
+            if (targetIdx === -1) return prev;
+
+            const targetCol = stripped[targetIdx];
+            const updatedTarget = { ...targetCol, items: [...targetCol.items, ...movingItems] };
+            const next = stripped.map((col, idx) => (idx === targetIdx ? updatedTarget : col));
+
+            movingItems.forEach((item) => {
+                pushHistory(item.id, `Moveu para ${updatedTarget.title}`);
+                if (targetKey === 'done') {
+                    pushHistory(item.id, 'Concluiu tarefa');
+                }
+            });
+            return next;
+        });
+
+        setSelectedIds([]);
+    };
+
+    const handleBulkPriorityChange = (priority: string) => {
+        if (!priority) return;
+        const selectedSet = new Set(selectedIds);
+        setColumns((prev) =>
+            prev.map((col) => ({
+                ...col,
+                items: col.items.map((item) =>
+                    selectedSet.has(item.id) ? { ...item, priority } : item
+                ),
+            }))
+        );
+        setSelectedCard((prev) =>
+            prev && selectedSet.has(prev.card.id) ? { ...prev, card: { ...prev.card, priority } } : prev
+        );
+    };
+
+    const handleBulkTagApply = () => {
+        const tag = bulkTag.trim();
+        if (!tag) return;
+        const selectedSet = new Set(selectedIds);
+        setColumns((prev) =>
+            prev.map((col) => ({
+                ...col,
+                items: col.items.map((item) =>
+                    selectedSet.has(item.id)
+                        ? { ...item, tags: item.tags ? Array.from(new Set([...item.tags, tag])) : [tag] }
+                        : item
+                ),
+            }))
+        );
+        setSelectedCard((prev) =>
+            prev && selectedSet.has(prev.card.id)
+                ? {
+                    ...prev,
+                    card: {
+                        ...prev.card,
+                        tags: prev.card.tags ? Array.from(new Set([...prev.card.tags, tag])) : [tag],
+                    },
+                }
+                : prev
+        );
+        setBulkTag('');
+    };
+
+    const handleBulkMarkDone = () => handleBulkMove('done');
+
+    // Scroll automático ao aproximar da borda
+    React.useEffect(() => {
+        if (!isDragging || !scrollContainerRef.current) {
+            if (scrollIntervalRef.current) {
+                clearInterval(scrollIntervalRef.current);
+                scrollIntervalRef.current = null;
+            }
+            return;
+        }
+
+        const container = scrollContainerRef.current;
+        const scrollThreshold = 100; // pixels da borda para iniciar scroll
+        const scrollSpeed = 10; // pixels por intervalo
+
+        const handleMouseMove = (e: MouseEvent) => {
+            if (!container) return;
+
+            const rect = container.getBoundingClientRect();
+            const mouseX = e.clientX;
+            const mouseY = e.clientY;
+
+            // Verificar proximidade das bordas
+            const nearLeft = mouseX - rect.left < scrollThreshold;
+            const nearRight = rect.right - mouseX < scrollThreshold;
+            const nearTop = mouseY - rect.top < scrollThreshold;
+            const nearBottom = rect.bottom - mouseY < scrollThreshold;
+
+            // Limpar intervalo anterior
+            if (scrollIntervalRef.current) {
+                clearInterval(scrollIntervalRef.current);
+                scrollIntervalRef.current = null;
+            }
+
+            // Iniciar scroll se próximo da borda
+            if (nearLeft || nearRight || nearTop || nearBottom) {
+                scrollIntervalRef.current = setInterval(() => {
+                    if (!container) return;
+
+                    const currentRect = container.getBoundingClientRect();
+                    const currentMouseX = e.clientX;
+                    const currentMouseY = e.clientY;
+
+                    if (currentMouseX - currentRect.left < scrollThreshold) {
+                        container.scrollLeft -= scrollSpeed;
+                    } else if (currentRect.right - currentMouseX < scrollThreshold) {
+                        container.scrollLeft += scrollSpeed;
+                    }
+
+                    if (currentMouseY - currentRect.top < scrollThreshold) {
+                        container.scrollTop -= scrollSpeed;
+                    } else if (currentRect.bottom - currentMouseY < scrollThreshold) {
+                        container.scrollTop += scrollSpeed;
+                    }
+                }, 16); // ~60fps
+            }
+        };
+
+        document.addEventListener('mousemove', handleMouseMove);
+
+        return () => {
+            document.removeEventListener('mousemove', handleMouseMove);
+            if (scrollIntervalRef.current) {
+                clearInterval(scrollIntervalRef.current);
+                scrollIntervalRef.current = null;
+            }
+        };
+    }, [isDragging]);
+
     const handleDrop = (event: React.DragEvent, toColumnKey: string) => {
         event.preventDefault();
         const payload = event.dataTransfer.getData('application/json');
         setActiveDropColumn(null);
+        setIsDragging(false);
+        if (scrollIntervalRef.current) {
+            clearInterval(scrollIntervalRef.current);
+            scrollIntervalRef.current = null;
+        }
 
         if (!payload) return;
 
         try {
-            const { cardId, fromColumnKey } = JSON.parse(payload) as { cardId: number; fromColumnKey: string };
-            if (!cardId || !fromColumnKey) return;
+            const parsed = JSON.parse(payload) as { cardId?: number; fromColumnKey?: string; cardIds?: number[]; fromColumns?: Record<number, string> };
+            const cardIds = parsed.cardIds ?? (parsed.cardId ? [parsed.cardId] : []);
+            const fromColumns = parsed.fromColumns ?? {};
+            if (cardIds.length === 0) return;
 
-            const fromKey = fromColumnKey;
-            const toKey = toColumnKey;
+            if (toColumnKey === 'done') {
+                const confirmFinish = window.confirm('Deseja realmente marcar as tarefas como concluídas?');
+                if (!confirmFinish) return;
+            }
 
             setColumns((prev) => {
-                const sourceIndex = prev.findIndex((col) => col.key === fromKey);
-                const targetIndex = prev.findIndex((col) => col.key === toKey);
-                if (sourceIndex === -1 || targetIndex === -1) return prev;
+                const movingSet = new Set(cardIds);
+                const movingItems: { item: BoardItem; fromKey: string }[] = [];
 
-                const card = prev[sourceIndex].items.find((item) => item.id === cardId);
-                if (!card) return prev;
-
-                // Caso arraste para a mesma coluna, apenas mantém a posição atual
-                if (fromKey === toKey) return prev;
-
-                const allowedTargets = columnRules[fromKey] ?? [];
-                const isAllowed = allowedTargets.includes(toKey);
-                if (!isAllowed) {
-                    return prev;
-                }
-
-                if (toKey === 'done') {
-                    const confirmFinish = window.confirm('Deseja realmente marcar esta tarefa como concluída?');
-                    if (!confirmFinish) return prev;
-                }
-
-                const updatedColumns = prev.map((col, index) => {
-                    if (index === sourceIndex) {
-                        return {
-                            ...col,
-                            items: col.items.filter((item) => item.id !== cardId),
-                        };
-                    }
-                    if (index === targetIndex) {
-                        return {
-                            ...col,
-                            items: [...col.items, card],
-                        };
-                    }
-                    return col;
+                const stripped = prev.map((col) => {
+                    const remaining = col.items.filter((item) => {
+                        if (movingSet.has(item.id)) {
+                            movingItems.push({ item, fromKey: fromColumns[item.id] ?? col.key });
+                            return false;
+                        }
+                        return true;
+                    });
+                    return { ...col, items: remaining };
                 });
 
-                pushHistory(cardId, `Moveu de ${prev[sourceIndex].title} para ${prev[targetIndex].title}`);
-                if (toKey === 'done') {
-                    pushHistory(cardId, 'Concluiu tarefa');
-                }
+                const targetIndex = stripped.findIndex((col) => col.key === toColumnKey);
+                if (targetIndex === -1) return prev;
 
-                return updatedColumns;
+                const targetCol = stripped[targetIndex];
+                const updatedTarget = { ...targetCol, items: [...targetCol.items, ...movingItems.map((m) => m.item)] };
+                const next = stripped.map((col, idx) => (idx === targetIndex ? updatedTarget : col));
+
+                movingItems.forEach((m) => {
+                    pushHistory(m.item.id, `Moveu para ${updatedTarget.title}`);
+                    if (toColumnKey === 'done') {
+                        pushHistory(m.item.id, 'Concluiu tarefa');
+                    }
+                });
+
+                return next;
             });
         } catch (_err) {
             // ignora payload inválido
@@ -186,7 +358,36 @@ const BoardPage: React.FC = () => {
         }
     };
 
-    const handleCardClick = (card: BoardItem, status: string) => {
+    const handleCardClick = (
+        card: BoardItem,
+        columnKey: string,
+        status: string,
+        event: React.MouseEvent,
+        index: number,
+        visibleItems: BoardItem[],
+    ) => {
+        const isToggle = event.ctrlKey || event.metaKey;
+        const isRange = event.shiftKey;
+
+        if (isRange && lastSelectedRef.current && lastSelectedRef.current.columnKey === columnKey) {
+            const start = Math.min(lastSelectedRef.current.index, index);
+            const end = Math.max(lastSelectedRef.current.index, index);
+            const rangeIds = visibleItems.slice(start, end + 1).map((i) => i.id);
+            setSelectedIds((prev) => Array.from(new Set([...prev, ...rangeIds])));
+            lastSelectedRef.current = { columnKey, index };
+            return;
+        }
+
+        if (isToggle) {
+            setSelectedIds((prev) =>
+                prev.includes(card.id) ? prev.filter((id) => id !== card.id) : [...prev, card.id],
+            );
+            lastSelectedRef.current = { columnKey, index };
+            return;
+        }
+
+        setSelectedIds([]);
+        lastSelectedRef.current = { columnKey, index };
         setSelectedCard({ card, status });
         pushHistory(card.id, 'Abriu modal');
     };
@@ -388,6 +589,61 @@ const BoardPage: React.FC = () => {
         setFilters({ user: null, priority: null, status: null, overdue: false });
     };
 
+    const handleSortChange = (columnKey: string, field: string) => {
+        setColumnSorts((prev) => {
+            const current = prev[columnKey];
+            if (current?.field === field) {
+                return {
+                    ...prev,
+                    [columnKey]: { field, direction: current.direction === 'asc' ? 'desc' : 'asc' },
+                };
+            }
+            return {
+                ...prev,
+                [columnKey]: { field, direction: 'asc' },
+            };
+        });
+    };
+
+    const sortItems = (items: BoardItem[], columnKey: string, timers: Record<string, number>): BoardItem[] => {
+        const sort = columnSorts[columnKey];
+        if (!sort) return items;
+
+        const sorted = [...items].sort((a, b) => {
+            let aVal: any;
+            let bVal: any;
+
+            switch (sort.field) {
+                case 'priority': {
+                    const priorityOrder: Record<string, number> = { urgente: 4, alta: 3, media: 2, baixa: 1 };
+                    aVal = priorityOrder[a.priority ?? ''] ?? 0;
+                    bVal = priorityOrder[b.priority ?? ''] ?? 0;
+                    break;
+                }
+                case 'deadline':
+                    aVal = a.deadline ? new Date(a.deadline).getTime() : Infinity;
+                    bVal = b.deadline ? new Date(b.deadline).getTime() : Infinity;
+                    break;
+                case 'time':
+                    aVal = timers[String(a.id)] ?? 0;
+                    bVal = timers[String(b.id)] ?? 0;
+                    break;
+                case 'title':
+                    aVal = a.title.toLowerCase();
+                    bVal = b.title.toLowerCase();
+                    break;
+                default:
+                    return 0;
+            }
+
+            if (aVal < bVal) return sort.direction === 'asc' ? -1 : 1;
+            if (aVal > bVal) return sort.direction === 'asc' ? 1 : -1;
+            return 0;
+        });
+
+        return sorted;
+    };
+
     const assignees = React.useMemo(() => {
         const set = new Set<string>();
         columns.forEach((col) => {
@@ -433,6 +689,58 @@ const BoardPage: React.FC = () => {
         }
         return {};
     }, [history, columns]);
+
+    const cardIndexById = React.useMemo(() => {
+        const map = new Map<number, BoardItem>();
+        columns.forEach((col) => {
+            col.items.forEach((item) => {
+                map.set(item.id, item);
+            });
+        });
+        return map;
+    }, [columns]);
+
+    const todayMetrics = React.useMemo(() => {
+        const start = new Date();
+        start.setHours(0, 0, 0, 0);
+        const todayMs = start.getTime();
+
+        let createdToday = 0;
+        let doneToday = 0;
+        const productivity: Record<string, number> = {};
+
+        Object.entries(history).forEach(([cardId, list]) => {
+            list.forEach((entry) => {
+                const ts = new Date(entry.timestamp).getTime();
+                if (ts >= todayMs) {
+                    if (entry.action.toLowerCase().includes('concluiu tarefa')) {
+                        doneToday += 1;
+                        const card = cardIndexById.get(Number(cardId));
+                        const assignee = card?.assignee ?? 'Sem responsável';
+                        productivity[assignee] = (productivity[assignee] ?? 0) + 1;
+                    }
+                    if (entry.action.toLowerCase().includes('criou')) {
+                        createdToday += 1;
+                    }
+                }
+            });
+        });
+
+        const totalSeconds = Object.values(timersByCard).reduce((acc, val) => acc + (val ?? 0), 0);
+        const topUsers = Object.entries(productivity)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 3)
+            .map(([user, score]) => ({ user, score }));
+
+        return { createdToday, doneToday, totalSeconds, overdueCount, topUsers };
+    }, [cardIndexById, history, overdueCount, timersByCard]);
+
+    const formatShortTime = (seconds: number) => {
+        const hrs = Math.floor(seconds / 3600);
+        const mins = Math.floor((seconds % 3600) / 60);
+        if (hrs > 0) return `${hrs}h ${mins}m`;
+        return `${mins}m`;
+    };
 
     const columnStats = React.useMemo(() => {
         const todayStart = new Date();
@@ -537,6 +845,20 @@ const BoardPage: React.FC = () => {
                             </div>
                         </div>
 
+                        <div className="flex flex-wrap items-end gap-3">
+                            <label className="flex flex-col gap-1 text-sm text-gray-700 dark:text-gray-200">
+                                Agrupar por
+                                <select
+                                    value={groupBy}
+                                    onChange={(e) => setGroupBy(e.target.value as 'column' | 'assignee')}
+                                    className="rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white"
+                                >
+                                    <option value="column">Agrupar por coluna (padrão)</option>
+                                    <option value="assignee">Agrupar por responsável</option>
+                                </select>
+                            </label>
+                        </div>
+
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                             <label className="flex flex-col gap-1 text-sm text-gray-700 dark:text-gray-200">
                                 Responsável
@@ -604,49 +926,179 @@ const BoardPage: React.FC = () => {
                         </div>
                     </div>
 
-                    <div className="flex gap-5 min-w-full">
-                        {columns.map((column) => (
-                            <BoardColumn
-                                key={column.key}
-                                title={column.title}
-                                items={column.items.filter((item) => {
-                                    if (filters.user && item.assignee !== filters.user) return false;
-                                    if (filters.priority && item.priority !== filters.priority) return false;
-                                    if (filters.status && column.key !== filters.status) return false;
-                                    if (filters.overdue) {
-                                        if (!item.deadline) return false;
-                                        const due = new Date(item.deadline).getTime();
-                                        if (due >= Date.now()) return false;
-                                    }
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
+                        <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white/80 dark:bg-neutral-900/80 backdrop-blur p-4">
+                            <p className="text-xs text-neutral-500 dark:text-neutral-400">Tarefas criadas hoje</p>
+                            <p className="text-2xl font-bold text-neutral-900 dark:text-white mt-1">{todayMetrics.createdToday}</p>
+                            <p className="text-[11px] text-neutral-500 dark:text-neutral-400">Somente visual</p>
+                        </div>
+                        <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white/80 dark:bg-neutral-900/80 backdrop-blur p-4">
+                            <p className="text-xs text-neutral-500 dark:text-neutral-400">Tarefas concluídas hoje</p>
+                            <p className="text-2xl font-bold text-neutral-900 dark:text-white mt-1">{todayMetrics.doneToday}</p>
+                            <p className="text-[11px] text-neutral-500 dark:text-neutral-400">Baseado em histórico local</p>
+                        </div>
+                        <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white/80 dark:bg-neutral-900/80 backdrop-blur p-4">
+                            <p className="text-xs text-neutral-500 dark:text-neutral-400">Tempo trabalhado hoje</p>
+                            <p className="text-2xl font-bold text-neutral-900 dark:text-white mt-1">{formatShortTime(todayMetrics.totalSeconds)}</p>
+                            <p className="text-[11px] text-neutral-500 dark:text-neutral-400">Somente local</p>
+                        </div>
+                        <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white/80 dark:bg-neutral-900/80 backdrop-blur p-4">
+                            <p className="text-xs text-neutral-500 dark:text-neutral-400">Tarefas atrasadas</p>
+                            <p className="text-2xl font-bold text-neutral-900 dark:text-white mt-1">{todayMetrics.overdueCount}</p>
+                            <p className="text-[11px] text-neutral-500 dark:text-neutral-400">Com base no prazo</p>
+                        </div>
+                        <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white/80 dark:bg-neutral-900/80 backdrop-blur p-4">
+                            <p className="text-xs text-neutral-500 dark:text-neutral-400">Top 3 usuários (fake)</p>
+                            <div className="mt-2 space-y-1 text-sm text-neutral-800 dark:text-neutral-100">
+                                {todayMetrics.topUsers.length === 0 && (
+                                    <p className="text-[11px] text-neutral-500 dark:text-neutral-400">Sem dados hoje</p>
+                                )}
+                                {todayMetrics.topUsers.map((u, idx) => (
+                                    <div key={u.user} className="flex items-center justify-between">
+                                        <span className="inline-flex items-center gap-2">
+                                            <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-neutral-200 dark:bg-neutral-700 text-xs font-semibold text-neutral-800 dark:text-neutral-100">
+                                                {u.user.charAt(0).toUpperCase()}
+                                            </span>
+                                            <span>{u.user}</span>
+                                        </span>
+                                        <span className="text-[12px] text-indigo-600 dark:text-indigo-300 font-semibold">+{u.score}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
 
-                                    if (debouncedSearch) {
-                                        const term = debouncedSearch;
-                                        const hay = `${item.title} ${item.description}`.toLowerCase();
-                                        if (!hay.includes(term)) return false;
-                                    }
-                                    return true;
-                                })}
-                                columnKey={column.key}
-                                isActiveDrop={activeDropColumn === column.key}
-                                activeTaskId={activeTaskId}
-                                checklists={column.items.reduce<Record<string, { done: number; total: number }>>((acc, item) => {
-                                    const list = checklists[item.id] ?? [];
-                                    const done = list.filter((c) => c.done).length;
-                                    acc[String(item.id)] = { done, total: list.length || 0 };
-                                    return acc;
-                                }, {})}
-                                onDragStart={handleDragStart}
-                                onDragEnd={handleDragLeave}
-                                onDrop={handleDrop}
-                                onDragOver={(event) => handleDragOver(event, column.key)}
-                                onDragLeave={handleDragLeave}
-                                onCardClick={handleCardClick}
-                                onPlayToggle={handlePlayToggle}
-                                stats={columnStats[column.key]}
-                            />
-                        ))}
+                    <div className="flex gap-5 min-w-full overflow-x-auto" ref={scrollContainerRef}>
+                        {columns.map((column) => {
+                            const filteredItems = column.items.filter((item) => {
+                                if (filters.user && item.assignee !== filters.user) return false;
+                                if (filters.priority && item.priority !== filters.priority) return false;
+                                if (filters.status && column.key !== filters.status) return false;
+                                if (filters.overdue) {
+                                    if (!item.deadline) return false;
+                                    const due = new Date(item.deadline).getTime();
+                                    if (due >= Date.now()) return false;
+                                }
+
+                                if (debouncedSearch) {
+                                    const term = debouncedSearch;
+                                    const hay = `${item.title} ${item.description}`.toLowerCase();
+                                    if (!hay.includes(term)) return false;
+                                }
+                                return true;
+                            });
+                            const sortedItems = sortItems(filteredItems, column.key, timersByCard);
+                            return (
+                                <BoardColumn
+                                    key={column.key}
+                                    title={column.title}
+                                    items={sortedItems}
+                                    columnKey={column.key}
+                                    isActiveDrop={activeDropColumn === column.key}
+                                    activeTaskId={activeTaskId}
+                                    checklists={column.items.reduce<Record<string, { done: number; total: number }>>((acc, item) => {
+                                        const list = checklists[item.id] ?? [];
+                                        const done = list.filter((c) => c.done).length;
+                                        acc[String(item.id)] = { done, total: list.length || 0 };
+                                        return acc;
+                                    }, {})}
+                                    onDragStart={handleDragStart}
+                                    onDragEnd={handleDragEnd}
+                                    onDrop={handleDrop}
+                                    onDragOver={(event) => handleDragOver(event, column.key)}
+                                    onDragLeave={handleDragLeave}
+                                    onCardClick={handleCardClick}
+                                    onPlayToggle={handlePlayToggle}
+                                    stats={columnStats[column.key]}
+                                    sortConfig={columnSorts[column.key]}
+                                    onSortChange={handleSortChange}
+                                    groupBy={groupBy}
+                                    isDragging={isDragging}
+                                    selectedIds={selectedIds}
+                                />
+                            );
+                        })}
                     </div>
                 </div>
+                {selectedIds.length > 0 && (
+                    <div className="fixed bottom-4 right-4 z-40 w-[340px] rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white/90 dark:bg-neutral-900/90 backdrop-blur shadow-lg shadow-black/10 dark:shadow-black/30 p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                            <div className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
+                                {selectedIds.length} selecionado(s)
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setSelectedIds([])}
+                                className="text-xs font-semibold text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-white"
+                            >
+                                Limpar
+                            </button>
+                        </div>
+                        <div className="space-y-2 text-sm">
+                            <div className="flex gap-2">
+                                <select
+                                    value={bulkMoveTarget}
+                                    onChange={(e) => setBulkMoveTarget(e.target.value)}
+                                    className="flex-1 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 py-2 text-sm text-neutral-800 dark:text-neutral-100"
+                                >
+                                    {columns.map((col) => (
+                                        <option key={col.key} value={col.key}>
+                                            Mover para {col.title}
+                                        </option>
+                                    ))}
+                                </select>
+                                <button
+                                    type="button"
+                                    onClick={() => handleBulkMove(bulkMoveTarget)}
+                                    className="rounded-lg bg-indigo-600 text-white px-3 py-2 text-xs font-semibold hover:bg-indigo-700 transition"
+                                >
+                                    Mover
+                                </button>
+                            </div>
+                            <div className="flex gap-2">
+                                <select
+                                    value={bulkPriority}
+                                    onChange={(e) => setBulkPriority(e.target.value)}
+                                    className="flex-1 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 py-2 text-sm text-neutral-800 dark:text-neutral-100"
+                                >
+                                    <option value="alta">Prioridade: Alta</option>
+                                    <option value="media">Prioridade: Média</option>
+                                    <option value="baixa">Prioridade: Baixa</option>
+                                    <option value="urgente">Prioridade: Urgente</option>
+                                </select>
+                                <button
+                                    type="button"
+                                    onClick={() => handleBulkPriorityChange(bulkPriority)}
+                                    className="rounded-lg bg-neutral-900 text-white px-3 py-2 text-xs font-semibold hover:bg-neutral-800 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-100 transition"
+                                >
+                                    Aplicar
+                                </button>
+                            </div>
+                            <div className="flex gap-2">
+                                <input
+                                    value={bulkTag}
+                                    onChange={(e) => setBulkTag(e.target.value)}
+                                    placeholder="Tag para aplicar"
+                                    className="flex-1 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 py-2 text-sm text-neutral-800 dark:text-neutral-100"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={handleBulkTagApply}
+                                    className="rounded-lg bg-neutral-200 text-neutral-800 px-3 py-2 text-xs font-semibold hover:bg-neutral-300 dark:bg-neutral-700 dark:text-white dark:hover:bg-neutral-600 transition"
+                                >
+                                    Tag
+                                </button>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={handleBulkMarkDone}
+                                className="w-full rounded-lg bg-green-600 text-white px-3 py-2 text-sm font-semibold hover:bg-green-700 transition"
+                            >
+                                Marcar como concluído
+                            </button>
+                        </div>
+                    </div>
+                )}
             </main>
 
             <BoardCardModal
