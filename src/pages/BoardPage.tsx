@@ -20,45 +20,46 @@ interface HistoryEntry {
     timestamp: string;
 }
 
+
 const initialColumns: ColumnConfig[] = [
     {
         key: 'backlog',
         title: 'Backlog',
         items: [
-            { id: 1, title: 'Mapear requisitos iniciais', description: 'Entrevistar stakeholders e alinhar escopo', assignee: 'Carla', priority: 'alta', tags: ['descoberta'] },
-            { id: 2, title: 'Desenhar visão de produto', description: 'Definir metas e indicadores-chave', assignee: 'Bruno', priority: 'media', tags: ['produto'] },
+            { id: 1, title: 'Mapear requisitos iniciais', description: 'Entrevistar stakeholders e alinhar escopo', assignee: 'Carla', priority: 'alta', tags: ['descoberta'], labels: ['Design'], deadline: '2025-12-20', watchers: ['Carla', 'Ana'] },
+            { id: 2, title: 'Desenhar visão de produto', description: 'Definir metas e indicadores-chave', assignee: 'Bruno', priority: 'media', tags: ['produto'], labels: ['Design'], deadline: '2025-12-22', watchers: ['Bruno'] },
         ],
     },
     {
         key: 'todo',
         title: 'A Fazer',
         items: [
-            { id: 3, title: 'Briefing visual', description: 'Guidelines de cores e componentes base', assignee: 'Ana', priority: 'baixa', tags: ['ui', 'design'] },
-            { id: 4, title: 'Checklist de integrações', description: 'Listar APIs e autenticação necessária', assignee: 'João', priority: 'alta', tags: ['tech'] },
+            { id: 3, title: 'Briefing visual', description: 'Guidelines de cores e componentes base', assignee: 'Ana', priority: 'baixa', tags: ['ui', 'design'], labels: ['Design'], deadline: '2025-12-25', watchers: ['Ana', 'João'] },
+            { id: 4, title: 'Checklist de integrações', description: 'Listar APIs e autenticação necessária', assignee: 'João', priority: 'alta', tags: ['tech'], labels: ['Backend'], deadline: '2025-12-18', watchers: ['João', 'Bruno'] },
         ],
     },
     {
         key: 'doing',
         title: 'Fazendo',
         items: [
-            { id: 5, title: 'Implementar onboarding', description: 'Fluxo inicial e tour guiado', assignee: 'Ana', priority: 'alta', tags: ['frontend', 'experiência'] },
-            { id: 6, title: 'Montar layout responsivo', description: 'Grids e breakpoints principais', assignee: 'João', priority: 'media', tags: ['frontend'] },
+            { id: 5, title: 'Implementar onboarding', description: 'Fluxo inicial e tour guiado', assignee: 'Ana', priority: 'alta', tags: ['frontend', 'experiência'], labels: ['Design', 'Urgente'], deadline: '2025-12-15', watchers: ['Ana', 'Carla'] },
+            { id: 6, title: 'Montar layout responsivo', description: 'Grids e breakpoints principais', assignee: 'João', priority: 'media', tags: ['frontend'], labels: ['Bug'], deadline: '2025-12-28', watchers: ['João'] },
         ],
     },
     {
         key: 'waiting',
         title: 'Aguardando',
         items: [
-            { id: 7, title: 'Aprovação jurídica', description: 'Revisar termos e políticas', assignee: 'Carlos', priority: 'baixa', tags: ['legal'] },
-            { id: 8, title: 'Validação de dados', description: 'Aguardando base de testes', assignee: 'Bruno', priority: 'media', tags: ['dados'] },
+            { id: 7, title: 'Aprovação jurídica', description: 'Revisar termos e políticas', assignee: 'Carlos', priority: 'baixa', tags: ['legal'], labels: ['Documentação'], deadline: '2025-12-30', watchers: ['Carlos'] },
+            { id: 8, title: 'Validação de dados', description: 'Aguardando base de testes', assignee: 'Bruno', priority: 'media', tags: ['dados'], labels: ['Backend'], deadline: '2025-12-26', watchers: ['Bruno', 'Ana'] },
         ],
     },
     {
         key: 'done',
         title: 'Concluído',
         items: [
-            { id: 9, title: 'Setup do repositório', description: 'Branches, PR template e lint configurados', assignee: 'Ana', priority: 'baixa', tags: ['devops'] },
-            { id: 10, title: 'CI inicial', description: 'Pipeline de build e testes unitários', assignee: 'João', priority: 'alta', tags: ['devops', 'qualidade'] },
+            { id: 9, title: 'Setup do repositório', description: 'Branches, PR template e lint configurados', assignee: 'Ana', priority: 'baixa', tags: ['devops'], labels: ['Documentação'], deadline: '2025-12-05', watchers: ['Ana'] },
+            { id: 10, title: 'CI inicial', description: 'Pipeline de build e testes unitários', assignee: 'João', priority: 'alta', tags: ['devops', 'qualidade'], labels: ['Backend'], deadline: '2025-12-10', watchers: ['João', 'Carla'] },
         ],
     },
 ];
@@ -76,10 +77,11 @@ const BoardPage: React.FC = () => {
     const [activeDropColumn, setActiveDropColumn] = React.useState<string | null>(null);
     const [activeTaskId, setActiveTaskId] = React.useState<string | null>(null);
     const [selectedCard, setSelectedCard] = React.useState<{ card: BoardItem; status: string } | null>(null);
-    const [filters, setFilters] = React.useState<{ user: string | null; priority: string | null; status: string | null }>({
+    const [filters, setFilters] = React.useState<{ user: string | null; priority: string | null; status: string | null; overdue: boolean }>({
         user: null,
         priority: null,
         status: null,
+        overdue: false,
     });
     const [searchTerm, setSearchTerm] = React.useState('');
     const [debouncedSearch, setDebouncedSearch] = React.useState('');
@@ -231,6 +233,11 @@ const BoardPage: React.FC = () => {
                 ),
             }))
         );
+        setSelectedCard((prev) =>
+            prev && prev.card.id === cardId
+                ? { ...prev, card: { ...prev.card, tags: prev.card.tags ? Array.from(new Set([...prev.card.tags, tag.trim()])) : [tag.trim()] } }
+                : prev
+        );
     }, []);
 
     const handleRemoveTag = React.useCallback((cardId: number, tag: string) => {
@@ -243,6 +250,110 @@ const BoardPage: React.FC = () => {
                         : item
                 ),
             }))
+        );
+        setSelectedCard((prev) =>
+            prev && prev.card.id === cardId
+                ? { ...prev, card: { ...prev.card, tags: (prev.card.tags ?? []).filter((t) => t !== tag) } }
+                : prev
+        );
+    }, []);
+
+    const handleAddLabel = React.useCallback((cardId: number, label: string) => {
+        if (!label.trim()) return;
+        setColumns((prev) =>
+            prev.map((col) => ({
+                ...col,
+                items: col.items.map((item) =>
+                    item.id === cardId
+                        ? {
+                            ...item,
+                            labels: item.labels
+                                ? Array.from(new Set([...item.labels, label]))
+                                : [label],
+                        }
+                        : item
+                ),
+            }))
+        );
+        setSelectedCard((prev) =>
+            prev && prev.card.id === cardId
+                ? { ...prev, card: { ...prev.card, labels: prev.card.labels ? Array.from(new Set([...prev.card.labels, label])) : [label] } }
+                : prev
+        );
+    }, []);
+
+    const handleRemoveLabel = React.useCallback((cardId: number, label: string) => {
+        setColumns((prev) =>
+            prev.map((col) => ({
+                ...col,
+                items: col.items.map((item) =>
+                    item.id === cardId
+                        ? { ...item, labels: (item.labels ?? []).filter((l) => l !== label) }
+                        : item
+                ),
+            }))
+        );
+        setSelectedCard((prev) =>
+            prev && prev.card.id === cardId
+                ? { ...prev, card: { ...prev.card, labels: (prev.card.labels ?? []).filter((l) => l !== label) } }
+                : prev
+        );
+    }, []);
+
+    const handleDeadlineChange = React.useCallback((cardId: number, deadline: string | null) => {
+        setColumns((prev) =>
+            prev.map((col) => ({
+                ...col,
+                items: col.items.map((item) =>
+                    item.id === cardId ? { ...item, deadline } : item
+                ),
+            }))
+        );
+        setSelectedCard((prev) =>
+            prev && prev.card.id === cardId ? { ...prev, card: { ...prev.card, deadline } } : prev
+        );
+    }, []);
+
+    const handleAddWatcher = React.useCallback((cardId: number, watcher: string) => {
+        if (!watcher.trim()) return;
+        setColumns((prev) =>
+            prev.map((col) => ({
+                ...col,
+                items: col.items.map((item) =>
+                    item.id === cardId
+                        ? { ...item, watchers: item.watchers ? Array.from(new Set([...item.watchers, watcher.trim()])) : [watcher.trim()] }
+                        : item
+                ),
+            }))
+        );
+        setSelectedCard((prev) =>
+            prev && prev.card.id === cardId
+                ? {
+                    ...prev,
+                    card: {
+                        ...prev.card,
+                        watchers: prev.card.watchers ? Array.from(new Set([...prev.card.watchers, watcher.trim()])) : [watcher.trim()],
+                    },
+                }
+                : prev
+        );
+    }, []);
+
+    const handleRemoveWatcher = React.useCallback((cardId: number, watcher: string) => {
+        setColumns((prev) =>
+            prev.map((col) => ({
+                ...col,
+                items: col.items.map((item) =>
+                    item.id === cardId
+                        ? { ...item, watchers: (item.watchers ?? []).filter((w) => w !== watcher) }
+                        : item
+                ),
+            }))
+        );
+        setSelectedCard((prev) =>
+            prev && prev.card.id === cardId
+                ? { ...prev, card: { ...prev.card, watchers: (prev.card.watchers ?? []).filter((w) => w !== watcher) } }
+                : prev
         );
     }, []);
 
@@ -274,7 +385,7 @@ const BoardPage: React.FC = () => {
     };
 
     const handleClearFilters = () => {
-        setFilters({ user: null, priority: null, status: null });
+        setFilters({ user: null, priority: null, status: null, overdue: false });
     };
 
     const assignees = React.useMemo(() => {
@@ -298,6 +409,53 @@ const BoardPage: React.FC = () => {
     }, [columns]);
 
     const statuses = React.useMemo(() => columns.map((col) => ({ key: col.key, title: col.title })), [columns]);
+    const overdueCount = React.useMemo(() => {
+        const nowTs = Date.now();
+        let count = 0;
+        columns.forEach((col) => {
+            col.items.forEach((item) => {
+                if (item.deadline && new Date(item.deadline).getTime() < nowTs) {
+                    count += 1;
+                }
+            });
+        });
+        return count;
+    }, [columns]);
+
+    const timersByCard = React.useMemo(() => {
+        try {
+            const stored = localStorage.getItem('boardTimers');
+            if (stored) {
+                return JSON.parse(stored) as Record<string, number>;
+            }
+        } catch {
+            // ignore
+        }
+        return {};
+    }, [history, columns]);
+
+    const columnStats = React.useMemo(() => {
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+        const todayMs = todayStart.getTime();
+        const stats: Record<string, { count: number; totalSeconds: number; doneToday?: number }> = {};
+        columns.forEach((col) => {
+            let totalSeconds = 0;
+            let doneToday = 0;
+            col.items.forEach((item) => {
+                const elapsed = timersByCard[String(item.id)] ?? 0;
+                totalSeconds += elapsed;
+                if (col.key === 'done') {
+                    const events = history[item.id] ?? [];
+                    if (events.some((e) => e.action.includes('Concluiu tarefa') && new Date(e.timestamp).getTime() >= todayMs)) {
+                        doneToday += 1;
+                    }
+                }
+            });
+            stats[col.key] = { count: col.items.length, totalSeconds, doneToday: col.key === 'done' ? doneToday : undefined };
+        });
+        return stats;
+    }, [columns, history, timersByCard]);
 
     React.useEffect(() => {
         const handler = setTimeout(() => {
@@ -427,6 +585,22 @@ const BoardPage: React.FC = () => {
                                     ))}
                                 </select>
                             </label>
+                            <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
+                                <input
+                                    type="checkbox"
+                                    checked={filters.overdue}
+                                    onChange={(e) => setFilters((prev) => ({ ...prev, overdue: e.target.checked }))}
+                                    className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500 dark:border-white/20 dark:bg-gray-800"
+                                />
+                                <span className="flex items-center gap-1">
+                                    Atrasados
+                                    {overdueCount > 0 && (
+                                        <span className="inline-flex min-w-[1.5rem] justify-center rounded-full bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-200 text-xs font-semibold px-2">
+                                            {overdueCount}
+                                        </span>
+                                    )}
+                                </span>
+                            </label>
                         </div>
                     </div>
 
@@ -439,6 +613,11 @@ const BoardPage: React.FC = () => {
                                     if (filters.user && item.assignee !== filters.user) return false;
                                     if (filters.priority && item.priority !== filters.priority) return false;
                                     if (filters.status && column.key !== filters.status) return false;
+                                    if (filters.overdue) {
+                                        if (!item.deadline) return false;
+                                        const due = new Date(item.deadline).getTime();
+                                        if (due >= Date.now()) return false;
+                                    }
 
                                     if (debouncedSearch) {
                                         const term = debouncedSearch;
@@ -463,6 +642,7 @@ const BoardPage: React.FC = () => {
                                 onDragLeave={handleDragLeave}
                                 onCardClick={handleCardClick}
                                 onPlayToggle={handlePlayToggle}
+                                stats={columnStats[column.key]}
                             />
                         ))}
                     </div>
@@ -486,6 +666,11 @@ const BoardPage: React.FC = () => {
                 onRemoveTag={(tag) => selectedCard && handleRemoveTag(selectedCard.card.id, tag)}
                 isPlaying={selectedCard ? activeTaskId === String(selectedCard.card.id) : false}
                 onTogglePlay={(cardId) => handlePlayToggle(cardId)}
+                onAddLabel={(label) => selectedCard && handleAddLabel(selectedCard.card.id, label)}
+                onRemoveLabel={(label) => selectedCard && handleRemoveLabel(selectedCard.card.id, label)}
+                onDeadlineChange={(deadline) => selectedCard && handleDeadlineChange(selectedCard.card.id, deadline)}
+                onAddWatcher={(w) => selectedCard && handleAddWatcher(selectedCard.card.id, w)}
+                onRemoveWatcher={(w) => selectedCard && handleRemoveWatcher(selectedCard.card.id, w)}
             />
         </div>
     );
